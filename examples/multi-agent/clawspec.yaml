@@ -1,0 +1,7 @@
+gateway_base_url: "http://127.0.0.1:18789"
+gateway_webhook_endpoint: "/webhook/mcp-skill-invoke"
+report_dir: "reports"
+scenario_patterns:
+  - "skills/**/tests/scenarios.yaml"
+  - "agents/**/tests/scenarios.yaml"
+ledger_path: "coverage-ledger.yaml"

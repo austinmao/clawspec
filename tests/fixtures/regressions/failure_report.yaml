@@ -1,0 +1,35 @@
+workflow: newsletter
+scenario: happy-path
+run: 2
+status: FAIL
+started_at: 2026-03-11T13:00:00Z
+completed_at: 2026-03-11T13:01:00Z
+target_type: skill
+trigger: /send-newsletter
+when:
+  invoke: /send-newsletter
+  params:
+    audience: qa
+    campaign: spring
+assertions:
+  - name: artifact_contains
+    type: artifact_contains
+    status: FAIL
+    path: __ARTIFACT__
+    sections:
+      - CTA
+    detail: "Missing sections: CTA"
+  - name: artifact_absent_words
+    type: artifact_absent_words
+    status: FAIL
+    path: __ARTIFACT__
+    words:
+      - unsubscribe
+    detail: "Found prohibited word: unsubscribe"
+feedback:
+  for_orchestrator: Add the CTA and remove the prohibited word.
+  structured:
+    - check: artifact_contains
+      missing: CTA
+      fix_action: Add CTA section
+      fix_reference: memory/drafts/2026-03-11-newsletter.md

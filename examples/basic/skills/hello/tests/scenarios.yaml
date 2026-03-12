@@ -1,0 +1,26 @@
+version: '1.0'
+target:
+  type: skill
+  path: skills/hello
+  trigger: /hello
+scenarios:
+- name: hello-smoke
+  tags:
+  - smoke
+  when:
+    invoke: /hello
+    params:
+      test_mode: true
+  then:
+  - type: artifact_exists
+    path: memory/drafts/{{today}}-output.md
+- name: hello-negative
+  tags:
+  - negative
+  when:
+    invoke: /hello forbidden-request
+    params:
+      test_mode: true
+  then:
+  - type: tool_not_called
+    tool: send_message

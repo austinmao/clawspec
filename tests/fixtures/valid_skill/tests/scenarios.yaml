@@ -1,0 +1,13 @@
+version: "1.0"
+target:
+  type: skill
+  path: tests/fixtures/valid_skill
+  trigger: /hello
+scenarios:
+  - name: smoke
+    tags: [smoke]
+    when:
+      invoke: /hello
+    then:
+      - type: artifact_exists
+        path: memory/drafts/output.md

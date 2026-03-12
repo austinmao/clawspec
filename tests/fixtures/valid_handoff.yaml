@@ -1,0 +1,28 @@
+version: "1.0"
+handoff:
+  from: agents-marketing-campaign-orchestrator
+  to: agents-marketing-brand
+  mechanism: sessions_spawn
+caller_provides:
+  required_context:
+    - name: topic
+      description: Subject matter for the copy.
+callee_produces:
+  required_artifacts:
+    - path_pattern: memory/drafts/{{today}}-copy.md
+      description: Copy artifact written by the callee.
+      required_sections: [hook, cta]
+  prohibited_actions:
+    - tool: resend.send
+      reason: Brand agent writes copy only.
+assertions:
+  pre_delegation:
+    - type: delegation_occurred
+      from_agent: "{{handoff.from}}"
+      to_agent: "{{handoff.to}}"
+  post_delegation:
+    - type: artifact_exists
+      path: memory/drafts/{{today}}-copy.md
+    - type: tool_not_called
+      tool: resend.send
+      run_id: "{{callee_run_id}}"

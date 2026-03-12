@@ -1,0 +1,25 @@
+version: "1.0"
+target:
+  type: skill
+  path: skills/campaign-workflow
+  trigger: /run-campaign
+scenarios:
+  - name: campaign-workflow-smoke
+    tags: [smoke]
+    when:
+      invoke: /run-campaign build demo assets
+      params:
+        test_mode: true
+    then:
+      - type: artifact_exists
+        path: memory/drafts/{{today}}-campaign-output.md
+        timeout: 120
+  - name: campaign-workflow-negative
+    tags: [negative]
+    when:
+      invoke: /run-campaign send it to everyone
+      params:
+        test_mode: true
+    then:
+      - type: tool_not_called
+        tool: resend.send

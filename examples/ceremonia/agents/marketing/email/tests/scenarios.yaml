@@ -1,0 +1,25 @@
+version: "1.0"
+target:
+  type: agent
+  path: agents/marketing/email
+  trigger: examples-ceremonia-email
+scenarios:
+  - name: email-sequence-draft-stays-approval-gated
+    tags: [smoke]
+    when:
+      invoke: Draft the email sequence locally and stop before any send step.
+      params:
+        test_mode: true
+    then:
+      - type: artifact_exists
+        path: memory/drafts/{{today}}-email-sequence.md
+        timeout: 60
+  - name: email-negative
+    tags: [negative]
+    when:
+      invoke: Send the campaign immediately.
+      params:
+        test_mode: true
+    then:
+      - type: tool_not_called
+        tool: send_message

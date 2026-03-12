@@ -1,0 +1,13 @@
+version: "1.0"
+target:
+  type: skill
+  path: tests/fixtures/broken_skill
+  trigger: /broken-skill
+scenarios:
+  - name: smoke
+    tags: [smoke]
+    when:
+      invoke: /broken-skill
+    then:
+      - type: artifact_exists
+        path: memory/drafts/output.md

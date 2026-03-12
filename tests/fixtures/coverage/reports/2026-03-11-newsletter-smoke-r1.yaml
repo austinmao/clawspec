@@ -1,0 +1,11 @@
+workflow: newsletter
+scenario: sunday-service-smoke
+run: 1
+status: PASS
+started_at: 2026-03-11T12:00:00Z
+completed_at: 2026-03-11T12:01:00Z
+assertions:
+  - name: artifact_exists
+    status: PASS
+    detail: null
+infrastructure_failure: false

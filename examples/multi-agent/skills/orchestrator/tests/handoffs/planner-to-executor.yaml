@@ -1,0 +1,21 @@
+version: "1.0"
+handoff:
+  from: examples-multi-agent-planner
+  to: examples-multi-agent-executor
+  mechanism: sessions_spawn
+
+caller_provides:
+  required_context:
+    - name: task
+      description: "The requested artifact task."
+    - name: outline
+      description: "A plan the executor should follow."
+
+callee_produces:
+  required_artifacts:
+    - path_pattern: memory/drafts/{{today}}-orchestrator-output.md
+      description: "Final artifact produced by the executor."
+  prohibited_actions:
+    - tool: send_message
+      reason: "The executor must stay local."
+

@@ -1,0 +1,42 @@
+waves:
+  marketing-core:
+    status: baseline-captured
+    items:
+      - id: skills/newsletter
+        tier: interior-skill
+        status: baseline-captured
+        contracts:
+          scenario_file: skills/newsletter/tests/scenarios.yaml
+        coverage:
+          negative: true
+      - id: skills/webinar-orchestrator
+        tier: orchestrator
+        status: baseline-captured
+        contracts:
+          scenario_file: skills/webinar-orchestrator/tests/scenarios.yaml
+          pipeline_file: skills/webinar-orchestrator/tests/pipeline.yaml
+          handoff_files:
+            - skills/webinar-orchestrator/tests/handoffs/orchestrator-to-brand.yaml
+        coverage:
+          negative: true
+      - id: skills/campaign-workflow
+        tier: orchestrator
+        status: baseline-captured
+        contracts:
+          scenario_file: skills/campaign-workflow/tests/scenarios.yaml
+        coverage:
+          negative: true
+      - id: agents/marketing/brand
+        tier: interior-agent
+        status: baseline-captured
+        contracts:
+          scenario_file: agents/marketing/brand/tests/scenarios.yaml
+        coverage:
+          negative: true
+      - id: agents/marketing/email
+        tier: interior-agent
+        status: baseline-captured
+        contracts:
+          scenario_file: agents/marketing/email/tests/scenarios.yaml
+        coverage:
+          negative: true

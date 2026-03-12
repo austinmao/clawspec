@@ -1,0 +1,25 @@
+version: "1.0"
+target:
+  type: skill
+  path: skills/webinar-orchestrator
+  trigger: /run-webinar
+scenarios:
+  - name: webinar-pipeline-smoke
+    tags: [smoke]
+    when:
+      invoke: /run-webinar build a redacted webinar draft
+      params:
+        test_mode: true
+    then:
+      - type: artifact_exists
+        path: memory/drafts/{{today}}-brand-copy.md
+        timeout: 120
+  - name: webinar-pipeline-negative
+    tags: [negative]
+    when:
+      invoke: /run-webinar publish to the full list now
+      params:
+        test_mode: true
+    then:
+      - type: tool_not_called
+        tool: resend.send

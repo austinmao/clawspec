@@ -1,0 +1,149 @@
+waves:
+  marketing-core:
+    status: authored
+    items:
+      - id: skills/newsletter
+        type: skill
+        tier: orchestrator
+        status: authored
+        contracts:
+          scenario_file: skills/newsletter/tests/scenarios.yaml
+          handoff_files:
+            - skills/newsletter/tests/handoffs/newsletter-to-segment.yaml
+          pipeline_file: skills/newsletter/tests/pipeline.yaml
+        coverage:
+          smoke: true
+          negative: true
+          permission: false
+          identity: false
+          token_budget: false
+          handoffs_complete: true
+          pipeline_complete: true
+          regression_baseline: false
+        verification:
+          mode: direct_smoke
+          approved_smoke_scenario: sunday-service-smoke
+          approved_command: python3 skills/qa/agent-test/scripts/run.py --target skills/newsletter --scenario sunday-service-smoke
+          evidence_paths: []
+          static_validated_at: null
+          last_live_smoke_at: null
+          last_live_smoke_status: null
+          last_baseline_at: null
+        deferred_hardening: []
+        notes: []
+      - id: skills/newsletter/sub-skills/analytics
+        type: skill
+        tier: interior-skill
+        status: uncovered
+        contracts:
+          scenario_file: skills/newsletter/sub-skills/analytics/tests/scenarios.yaml
+          handoff_files: []
+          pipeline_file: null
+        coverage:
+          smoke: false
+          negative: false
+          permission: false
+          identity: false
+          token_budget: false
+          handoffs_complete: false
+          pipeline_complete: false
+          regression_baseline: false
+        verification:
+          mode: delayed_followup
+          approved_smoke_scenario: null
+          approved_command: null
+          evidence_paths: []
+          static_validated_at: null
+          last_live_smoke_at: null
+          last_live_smoke_status: null
+          last_baseline_at: null
+        deferred_hardening: []
+        notes: []
+      - id: skills/campaign-workflow
+        type: skill
+        tier: orchestrator
+        status: uncovered
+        contracts:
+          scenario_file: skills/campaign-workflow/tests/scenarios.yaml
+          handoff_files: []
+          pipeline_file: null
+        coverage:
+          smoke: true
+          negative: true
+          permission: false
+          identity: false
+          token_budget: false
+          handoffs_complete: false
+          pipeline_complete: false
+          regression_baseline: false
+        verification:
+          mode: direct_smoke
+          approved_smoke_scenario: null
+          approved_command: null
+          evidence_paths: []
+          static_validated_at: null
+          last_live_smoke_at: null
+          last_live_smoke_status: null
+          last_baseline_at: null
+        deferred_hardening: []
+        notes: []
+      - id: agents/marketing/email
+        type: agent
+        tier: interior-agent
+        status: live-pass
+        contracts:
+          scenario_file: agents/marketing/email/tests/scenarios.yaml
+          handoff_files: []
+          pipeline_file: null
+        coverage:
+          smoke: true
+          negative: true
+          permission: true
+          identity: true
+          token_budget: true
+          handoffs_complete: false
+          pipeline_complete: false
+          regression_baseline: false
+        verification:
+          mode: direct_smoke
+          approved_smoke_scenario: email-agent-smoke
+          approved_command: python3 skills/qa/agent-test/scripts/run.py --target agents/marketing/email --scenario email-agent-smoke
+          evidence_paths:
+            - memory/logs/qa/2026-03-11-newsletter-smoke-r1.yaml
+          static_validated_at: 2026-03-11T10:00:00Z
+          last_live_smoke_at: 2026-03-11T10:30:00Z
+          last_live_smoke_status: pass
+          last_baseline_at: null
+        deferred_hardening: []
+        notes: []
+  ops-core:
+    status: authored
+    items:
+      - id: skills/ops-triage
+        type: skill
+        tier: orchestrator
+        status: uncovered
+        contracts:
+          scenario_file: skills/ops-triage/tests/scenarios.yaml
+          handoff_files: []
+          pipeline_file: null
+        coverage:
+          smoke: false
+          negative: false
+          permission: false
+          identity: false
+          token_budget: false
+          handoffs_complete: false
+          pipeline_complete: false
+          regression_baseline: false
+        verification:
+          mode: direct_smoke
+          approved_smoke_scenario: null
+          approved_command: null
+          evidence_paths: []
+          static_validated_at: null
+          last_live_smoke_at: null
+          last_live_smoke_status: null
+          last_baseline_at: null
+        deferred_hardening: []
+        notes: []

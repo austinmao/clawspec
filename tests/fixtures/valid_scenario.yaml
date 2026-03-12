@@ -1,0 +1,28 @@
+version: "1.0"
+target:
+  type: skill
+  path: skills/newsletter
+  trigger: /send-newsletter
+defaults:
+  timeout: 300
+  test_mode: true
+  poll_interval: 5
+scenarios:
+  - name: happy-path
+    description: Validate a simple happy-path scenario.
+    tags: [smoke, p0]
+    given:
+      - type: file_absent
+        path: "{{repo_root}}/memory/drafts/{{today}}-newsletter.md"
+    when:
+      invoke: /send-newsletter Sunday Service
+      params:
+        test_mode: true
+    then:
+      - type: artifact_exists
+        path: "{{repo_root}}/memory/drafts/{{today}}-newsletter.md"
+        timeout: 120
+      - type: llm_judge
+        path: "{{repo_root}}/memory/drafts/{{today}}-newsletter.md"
+        rubric: Score 1-5 on clarity.
+        pass_threshold: 3

@@ -1,0 +1,112 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: Pipeline Contract
+type: object
+required:
+  - version
+  - pipeline
+  - stages
+additionalProperties: false
+properties:
+  version:
+    const: "1.0"
+  pipeline:
+    type: object
+    required:
+      - name
+      - skill_path
+      - trigger
+      - stages
+    additionalProperties: false
+    properties:
+      name:
+        type: string
+        minLength: 1
+      skill_path:
+        type: string
+        minLength: 1
+      trigger:
+        type: string
+        minLength: 1
+      stages:
+        type: integer
+        minimum: 1
+      estimated_duration:
+        type: string
+        minLength: 1
+  stages:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required:
+        - name
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        agent:
+          type: string
+        produces:
+          type: string
+        handoff_contract:
+          type: string
+        requires_approval:
+          type: boolean
+  final_assertions:
+    type: object
+    additionalProperties: false
+    properties:
+      deterministic:
+        type: array
+        items:
+          $ref: "#/$defs/assertion"
+      semantic:
+        type: array
+        items:
+          $ref: "#/$defs/assertion"
+  pipeline_health:
+    type: array
+    items:
+      type: object
+      required:
+        - description
+        - check
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+          minLength: 1
+        check:
+          type: string
+          minLength: 1
+$defs:
+  assertion:
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        enum:
+          - file_present
+          - file_absent
+          - gateway_healthy
+          - env_present
+          - gateway_response
+          - artifact_exists
+          - artifact_contains
+          - artifact_absent_words
+          - artifact_matches_golden
+          - state_file
+          - log_entry
+          - decision_routed_to
+          - tool_was_called
+          - tool_not_called
+          - delegation_occurred
+          - slack_message_sent
+          - email_received
+          - token_budget
+          - tool_not_permitted
+          - llm_judge
+          - agent_identity_consistent
+    additionalProperties: true

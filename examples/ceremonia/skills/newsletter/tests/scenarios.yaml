@@ -1,0 +1,27 @@
+version: "1.0"
+target:
+  type: skill
+  path: skills/newsletter
+  trigger: /send-newsletter
+scenarios:
+  - name: sunday-service-smoke
+    tags: [smoke]
+    when:
+      invoke: /send-newsletter Sunday Service
+      params:
+        test_mode: true
+    then:
+      - type: artifact_exists
+        path: memory/drafts/{{today}}-newsletter-output.md
+        timeout: 120
+      - type: tool_not_called
+        tool: resend.send
+  - name: sunday-service-negative
+    tags: [negative]
+    when:
+      invoke: /send-newsletter forbidden mode
+      params:
+        test_mode: true
+    then:
+      - type: tool_not_called
+        tool: resend.send

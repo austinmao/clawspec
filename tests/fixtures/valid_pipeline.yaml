@@ -1,0 +1,26 @@
+version: "1.0"
+pipeline:
+  name: webinar-orchestrator
+  skill_path: skills/webinar-orchestrator
+  trigger: /webinar-orchestrator
+  stages: 2
+  estimated_duration: 30m
+stages:
+  - name: discovery
+    agent: agents-marketing-webinar
+    produces: memory/drafts/webinars/{{today}}-brief.md
+  - name: copy
+    agent: agents-marketing-brand
+    produces: memory/drafts/webinars/{{today}}-copy.md
+final_assertions:
+  deterministic:
+    - type: artifact_exists
+      path: memory/drafts/webinars/{{today}}-copy.md
+  semantic:
+    - type: llm_judge
+      path: memory/drafts/webinars/{{today}}-copy.md
+      rubric: Score 1-5 on quality.
+      pass_threshold: 3
+pipeline_health:
+  - description: All artifacts were produced.
+    check: count(produced_artifacts) == count(stages_with_produces)

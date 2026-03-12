@@ -1,0 +1,54 @@
+metadata:
+  date: 2026-03-12
+  gateway_version: gateway-1.3.0
+  model_versions:
+    primary: gpt-5.4
+    judge: gpt-5.4-mini
+reports:
+  - workflow: brand
+    scenario: rejects-out-of-scope
+    run: 1
+    status: PASS
+    completed_at: 2026-03-12T12:01:00Z
+    assertions:
+      - name: tool_not_called
+        type: tool_not_called
+        status: PASS
+        tool: resend.send
+        detail: resend.send was not called
+  - workflow: coordinator
+    scenario: routing
+    run: 1
+    status: PASS
+    completed_at: 2026-03-12T12:01:00Z
+    assertions:
+      - name: llm_judge
+        type: llm_judge
+        status: PASS
+        score: 0.84
+        threshold: 0.8
+        detail: Routing quality dipped slightly
+  - workflow: newsletter
+    scenario: happy-path
+    run: 1
+    status: FAIL
+    completed_at: 2026-03-12T12:01:00Z
+    assertions:
+      - name: artifact_exists
+        type: artifact_exists
+        status: PASS
+        path: /tmp/openclaw/newsletter.md
+        detail: Draft exists
+      - name: artifact_contains
+        type: artifact_contains
+        status: FAIL
+        path: /tmp/openclaw/newsletter.md
+        sections:
+          - CTA
+        detail: "Missing sections: CTA"
+      - name: llm_judge
+        type: llm_judge
+        status: WARN
+        score: 0.73
+        threshold: 0.8
+        detail: Voice slipped below threshold

@@ -1,0 +1,13 @@
+workflow: brand
+scenario: rejects-out-of-scope
+run: 1
+status: FAIL
+started_at: 2026-03-11T12:00:00Z
+completed_at: 2026-03-11T12:01:00Z
+assertions:
+  - name: tool_not_called
+    type: tool_not_called
+    status: FAIL
+    tool: resend.send
+    detail: resend.send was called unexpectedly
+infrastructure_failure: false

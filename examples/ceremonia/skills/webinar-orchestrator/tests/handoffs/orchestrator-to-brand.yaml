@@ -1,0 +1,21 @@
+version: "1.0"
+handoff:
+  from: ceremonia-webinar-orchestrator
+  to: ceremonia-marketing-brand
+  mechanism: sessions_spawn
+
+caller_provides:
+  required_context:
+    - name: topic
+      description: "Webinar topic"
+    - name: audience
+      description: "Audience segment"
+
+callee_produces:
+  required_artifacts:
+    - path_pattern: memory/drafts/{{today}}-brand-copy.md
+      description: "Brand-aligned copy draft"
+  prohibited_actions:
+    - tool: resend.send
+      reason: "Copy generation must stay draft-only."
+

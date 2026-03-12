@@ -1,0 +1,9 @@
+version: "1.0"
+target:
+  type: skill
+  path: skills/newsletter
+  trigger: /send-newsletter
+scenarios:
+  - name: missing-then
+    when:
+      invoke: /send-newsletter Sunday Service

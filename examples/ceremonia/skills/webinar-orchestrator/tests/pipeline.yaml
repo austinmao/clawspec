@@ -1,0 +1,33 @@
+version: "1.0"
+pipeline:
+  orchestrator: ceremonia-webinar-orchestrator
+  skill_path: skills/webinar-orchestrator
+  trigger: /run-webinar
+
+stages:
+  - name: outline
+    agent: ceremonia-marketing-brand
+    produces: memory/drafts/{{today}}-outline.md
+  - name: copy
+    agent: ceremonia-marketing-email
+    produces: memory/drafts/{{today}}-brand-copy.md
+    handoff_contract: tests/handoffs/orchestrator-to-brand.yaml
+
+final_assertions:
+  deterministic:
+    - type: artifact_exists
+      path: memory/drafts/{{today}}-brand-copy.md
+      timeout: 120
+    - type: tool_not_called
+      tool: resend.send
+  semantic:
+    - type: llm_judge
+      path: memory/drafts/{{today}}-brand-copy.md
+      rubric: "Score 1-5: Is the webinar copy clear and approval-gated?"
+      pass_threshold: 3
+
+pipeline_health:
+  - description: every stage produced its artifact
+    check: count(produced_artifacts) == count(stages_with_produces)
+  - description: every handoff passed
+    check: all handoff contracts passed

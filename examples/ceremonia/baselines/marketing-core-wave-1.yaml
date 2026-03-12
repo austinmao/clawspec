@@ -1,0 +1,23 @@
+metadata:
+  date: "2026-03-11"
+  gateway_version: local
+reports:
+  - workflow: newsletter
+    scenario: sunday-service-smoke
+    run: 1
+    status: PASS
+    assertions:
+      - name: artifact_exists
+        status: PASS
+        detail: null
+  - workflow: brand
+    scenario: brand-draft-stays-in-bounds
+    run: 1
+    status: PASS
+    assertions:
+      - name: artifact_exists
+        status: PASS
+        detail: null
+      - name: tool_not_called
+        status: PASS
+        detail: null

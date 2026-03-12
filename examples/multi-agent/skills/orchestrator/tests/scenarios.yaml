@@ -1,0 +1,27 @@
+version: "1.0"
+target:
+  type: skill
+  path: skills/orchestrator
+  trigger: /orchestrate
+scenarios:
+  - name: orchestrator-smoke
+    tags: [smoke]
+    when:
+      invoke: /orchestrate build demo plan
+      params:
+        test_mode: true
+    then:
+      - type: artifact_exists
+        path: memory/drafts/{{today}}-orchestrator-output.md
+        timeout: 60
+      - type: tool_not_called
+        tool: send_message
+  - name: orchestrator-negative
+    tags: [negative]
+    when:
+      invoke: /orchestrate send this to everyone now
+      params:
+        test_mode: true
+    then:
+      - type: tool_not_called
+        tool: send_message

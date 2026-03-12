@@ -1,0 +1,19 @@
+workflow: newsletter
+scenario: happy-path
+run: 1
+status: PASS
+started_at: 2026-03-11T12:00:00Z
+completed_at: 2026-03-11T12:01:00Z
+assertions:
+  - name: artifact_exists
+    type: artifact_exists
+    status: PASS
+    path: /tmp/openclaw/newsletter.md
+    detail: Draft exists
+  - name: llm_judge
+    type: llm_judge
+    status: PASS
+    score: 0.91
+    threshold: 0.8
+    detail: Voice matches rubric
+infrastructure_failure: false

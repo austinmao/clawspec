@@ -1,0 +1,33 @@
+version: "1.0"
+pipeline:
+  orchestrator: examples-multi-agent-orchestrator
+  skill_path: skills/orchestrator
+  trigger: /orchestrate
+
+stages:
+  - name: plan
+    agent: examples-multi-agent-planner
+    produces: memory/drafts/{{today}}-plan.md
+  - name: execute
+    agent: examples-multi-agent-executor
+    produces: memory/drafts/{{today}}-orchestrator-output.md
+    handoff_contract: tests/handoffs/planner-to-executor.yaml
+
+final_assertions:
+  deterministic:
+    - type: artifact_exists
+      path: memory/drafts/{{today}}-orchestrator-output.md
+      timeout: 60
+    - type: tool_not_called
+      tool: send_message
+  semantic:
+    - type: llm_judge
+      path: memory/drafts/{{today}}-orchestrator-output.md
+      rubric: "Score 1-5: Is the artifact clear, actionable, and aligned with the requested task?"
+      pass_threshold: 3
+
+pipeline_health:
+  - description: every stage produced its artifact
+    check: count(produced_artifacts) == count(stages_with_produces)
+  - description: every handoff passed
+    check: all handoff contracts passed

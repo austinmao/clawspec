@@ -1,0 +1,2 @@
+2026-03-11T12:00:00Z run_id=run-456 tool=sessions_spawn agent=agents-marketing-campaign-orchestrator params.agentId=agents-marketing-brand child_run_id=run-789
+2026-03-11T12:00:01Z run_id=run-789 session_started agent=agents-marketing-brand

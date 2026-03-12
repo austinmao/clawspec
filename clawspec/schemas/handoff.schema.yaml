@@ -1,0 +1,150 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: Handoff Contract
+type: object
+required:
+  - version
+  - handoff
+  - caller_provides
+  - callee_produces
+additionalProperties: false
+properties:
+  version:
+    const: "1.0"
+  handoff:
+    type: object
+    required:
+      - from
+      - to
+      - mechanism
+    additionalProperties: false
+    properties:
+      from:
+        type: string
+        minLength: 1
+      to:
+        type: string
+        minLength: 1
+      mechanism:
+        const: sessions_spawn
+  caller_provides:
+    type: object
+    additionalProperties: false
+    properties:
+      required_context:
+        type: array
+        items:
+          $ref: "#/$defs/namedItem"
+      required_artifacts:
+        type: array
+        items:
+          $ref: "#/$defs/artifact"
+  callee_produces:
+    type: object
+    required:
+      - required_artifacts
+    additionalProperties: false
+    properties:
+      required_artifacts:
+        type: array
+        minItems: 1
+        items:
+          $ref: "#/$defs/artifact"
+      state_updates:
+        type: array
+        items:
+          type: object
+          required:
+            - description
+          additionalProperties: false
+          properties:
+            description:
+              type: string
+              minLength: 1
+      prohibited_actions:
+        type: array
+        items:
+          type: object
+          required:
+            - tool
+            - reason
+          additionalProperties: false
+          properties:
+            tool:
+              type: string
+              minLength: 1
+            reason:
+              type: string
+              minLength: 1
+  assertions:
+    type: object
+    additionalProperties: false
+    properties:
+      pre_delegation:
+        type: array
+        items:
+          $ref: "#/$defs/assertion"
+      post_delegation:
+        type: array
+        items:
+          $ref: "#/$defs/assertion"
+$defs:
+  namedItem:
+    type: object
+    required:
+      - name
+      - description
+    additionalProperties: false
+    properties:
+      name:
+        type: string
+        minLength: 1
+      description:
+        type: string
+        minLength: 1
+  artifact:
+    type: object
+    required:
+      - path_pattern
+      - description
+    additionalProperties: false
+    properties:
+      path_pattern:
+        type: string
+        minLength: 1
+      description:
+        type: string
+        minLength: 1
+      required_sections:
+        type: array
+        items:
+          type: string
+          minLength: 1
+  assertion:
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        enum:
+          - file_present
+          - file_absent
+          - gateway_healthy
+          - env_present
+          - gateway_response
+          - artifact_exists
+          - artifact_contains
+          - artifact_absent_words
+          - artifact_matches_golden
+          - state_file
+          - log_entry
+          - decision_routed_to
+          - tool_was_called
+          - tool_not_called
+          - delegation_occurred
+          - slack_message_sent
+          - email_received
+          - token_budget
+          - tool_not_permitted
+          - llm_judge
+          - agent_identity_consistent
+    additionalProperties: true
