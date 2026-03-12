@@ -86,6 +86,7 @@ coverage("examples/ceremonia/coverage-ledger.yaml")
 - [docs/building-new-pipelines.md](docs/building-new-pipelines.md)
 - [docs/migrating-existing-agents.md](docs/migrating-existing-agents.md)
 - [docs/assertion-reference.md](docs/assertion-reference.md)
+- [docs/launch-posts.md](docs/launch-posts.md)
 
 ## License
 
