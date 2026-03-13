@@ -205,6 +205,57 @@ def _registered_agents(interface: AgentInterface | None = None) -> tuple[dict[st
     return tuple(item for item in payload if isinstance(item, dict))
 
 
+def _configured_gateway_workspace(*, repo_root: Path) -> Path | None:
+    result = subprocess.run(
+        ["openclaw", "config", "get", "agents.defaults.workspace"],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
+    )
+    if result.returncode != 0:
+        return None
+    value = (result.stdout or "").strip()
+    if not value:
+        return None
+    return Path(value).expanduser().resolve()
+
+
+def _using_local_default_gateway(
+    *,
+    gateway_base: str,
+    interface: AgentInterface | None,
+) -> bool:
+    if gateway_base.rstrip("/") != str(GATEWAY_BASE).rstrip("/"):
+        return False
+    return interface is None or isinstance(interface, OpenClawInterface)
+
+
+def _gateway_workspace_mismatch(
+    *,
+    repo_root: Path,
+    gateway_base: str,
+    interface: AgentInterface | None = None,
+) -> str | None:
+    if not _using_local_default_gateway(gateway_base=gateway_base, interface=interface):
+        return None
+
+    configured = _configured_gateway_workspace(repo_root=repo_root)
+    expected = repo_root.resolve()
+    if configured is None:
+        return (
+            "Could not determine the configured OpenClaw workspace from "
+            "`openclaw config get agents.defaults.workspace`."
+        )
+    if configured != expected:
+        return (
+            f"Gateway workspace mismatch: configured workspace {configured} does not match "
+            f"repo root {expected}. Start or point OpenClaw at the correct workspace before "
+            "running QA scenarios."
+        )
+    return None
+
+
 def _agent_id_from_trigger(trigger: str) -> str | None:
     match = re.search(r'agentId:\s*["\']?([^,"\')]+)', trigger)
     if match:
@@ -239,6 +290,41 @@ def _resolve_agent_id(
     if trigger:
         return trigger
     raise ValueError(f"Unable to resolve agent id for {entry.get('target_path')}")
+
+
+def _agent_registration_mismatch(
+    entry: dict[str, Any],
+    *,
+    repo_root: Path,
+    gateway_base: str,
+    interface: AgentInterface | None = None,
+) -> str | None:
+    if entry.get("target_type") != "agent":
+        return None
+    if not _using_local_default_gateway(gateway_base=gateway_base, interface=interface):
+        return None
+
+    expected_workspace = str((repo_root / entry["target_path"]).resolve())
+    try:
+        registry = _registered_agents(interface)
+        matches = [
+            str(item.get("id", "")).strip()
+            for item in registry
+            if str(item.get("workspace", "")).strip() == expected_workspace
+        ]
+    except Exception as exc:
+        return f"Could not inspect registered OpenClaw agents: {exc}"
+
+    if matches:
+        return None
+
+    configured = _configured_gateway_workspace(repo_root=repo_root)
+    configured_text = str(configured) if configured is not None else "unknown"
+    trigger = str(entry.get("trigger", "")).strip() or "<missing trigger>"
+    return (
+        f"No registered OpenClaw agent matches workspace {expected_workspace} "
+        f"(trigger {trigger}). Configured gateway workspace: {configured_text}."
+    )
 
 
 def _agent_message(scenario: dict[str, Any]) -> str:
@@ -333,6 +419,23 @@ def _trigger_scenario(
     interface: AgentInterface | None = None,
     timeout: int = 60,
 ) -> dict[str, Any]:
+    mismatch = _gateway_workspace_mismatch(
+        repo_root=repo_root,
+        gateway_base=gateway_base,
+        interface=interface,
+    )
+    if mismatch:
+        raise RuntimeError(mismatch)
+
+    agent_mismatch = _agent_registration_mismatch(
+        entry,
+        repo_root=repo_root,
+        gateway_base=gateway_base,
+        interface=interface,
+    )
+    if agent_mismatch:
+        raise RuntimeError(agent_mismatch)
+
     if entry.get("target_type") == "agent":
         return _trigger_agent_scenario(
             entry,
@@ -418,8 +521,12 @@ def _synthetic_report(
     detail: str,
     assertions: list[dict[str, Any]] | None = None,
     infrastructure_failure: bool = False,
+    repo_root: Path | None = None,
+    report_dir: str | Path | None = None,
+    run_number: int | None = None,
 ) -> dict[str, Any]:
-    return {
+    completed_at = _iso_timestamp()
+    report = {
         "target": entry["target_path"],
         "workflow": Path(entry["target_path"]).name,
         "scenario": scenario_name,
@@ -430,7 +537,27 @@ def _synthetic_report(
         "infrastructure_failure": infrastructure_failure,
         "assertions": assertions or [],
         "mode": mode,
+        "started_at": completed_at,
+        "completed_at": completed_at,
     }
+    if repo_root is None or report_dir is None or mode == "DRY-RUN":
+        return report
+
+    report["run"] = run_number or _next_run_number(
+        report_dir,
+        workflow=report["workflow"],
+        scenario=scenario_name,
+        repo_root=repo_root,
+    )
+    active_report_dir = _resolve_report_dir(report_dir, repo_root=repo_root)
+    active_report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = active_report_dir / (
+        f"{completed_at[:10]}-{_slug(report['workflow'])}-{_slug(scenario_name)}-r{report['run']}.yaml"
+    )
+    report["report_path"] = str(report_path)
+    with report_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(report, handle, sort_keys=False)
+    return report
 
 
 def _resolve_pipeline_relative_path(
@@ -687,6 +814,8 @@ def _execute_entry(
             status="FAIL",
             detail=f"Preconditions failed: {details}",
             assertions=preconditions,
+            repo_root=repo_root,
+            report_dir=args.report_dir,
         )
 
     if args.dry_run:
@@ -803,10 +932,17 @@ def _run_pipeline(args: argparse.Namespace) -> int:
             )
             run_id = str(response["run_id"])
         except Exception as exc:
-            print("INFRASTRUCTURE")
-            print("| Scenario | Status | Mode | Detail | Report |")
-            print("|----------|--------|------|--------|--------|")
-            print(f"| pipeline | ERROR | RUN | {str(exc).replace('|', '/')} | - |")
+            report = _synthetic_report(
+                entry=entry,
+                scenario_name="pipeline",
+                mode="RUN",
+                status="ERROR",
+                detail=str(exc).replace("|", "/"),
+                infrastructure_failure=True,
+                repo_root=repo_root,
+                report_dir=args.report_dir,
+            )
+            _print_table("INFRASTRUCTURE", [report])
             return 1
 
     def _evaluate_handoff(handoff_path: Path, active_run_id: str) -> dict[str, Any]:
@@ -846,11 +982,17 @@ def _run_pipeline(args: argparse.Namespace) -> int:
         )
     except Exception as exc:
         mode = "EVALUATE-ONLY" if args.evaluate_only else "RUN"
-        detail = str(exc).replace("|", "/")
-        print("INFRASTRUCTURE")
-        print("| Scenario | Status | Mode | Detail | Report |")
-        print("|----------|--------|------|--------|--------|")
-        print(f"| pipeline | ERROR | {mode} | {detail} | - |")
+        report = _synthetic_report(
+            entry={"target_path": target_path, "target_type": "skill", "trigger": trigger},
+            scenario_name="pipeline",
+            mode=mode,
+            status="ERROR",
+            detail=str(exc).replace("|", "/"),
+            infrastructure_failure=True,
+            repo_root=repo_root,
+            report_dir=args.report_dir,
+        )
+        _print_table("INFRASTRUCTURE", [report])
         return 1
 
     report = reports[0]
@@ -985,6 +1127,8 @@ def run_contracts(
                     mode="RUN",
                     status="FAIL",
                     detail=f"Negative coverage is missing for {target_path}",
+                    repo_root=repo_root,
+                    report_dir=config.report_dir,
                 )
             )
         return reports
@@ -1020,6 +1164,8 @@ def run_contracts(
                     mode="RUN",
                     status="FAIL",
                     detail="Structural validation failed: " + "; ".join(details),
+                    repo_root=repo_root,
+                    report_dir=config.report_dir,
                 )
             )
         return reports
@@ -1062,6 +1208,8 @@ def run_contracts(
                     mode="RUN",
                     status="FAIL",
                     detail=f"Scenario {entry['name']} not found in {scenario_file}",
+                    repo_root=repo_root,
+                    report_dir=config.report_dir,
                 )
             )
             continue
@@ -1088,6 +1236,8 @@ def run_contracts(
                         status="ERROR",
                         detail=str(exc),
                         infrastructure_failure=True,
+                        repo_root=repo_root,
+                        report_dir=config.report_dir,
                     )
                 )
         reports.append(_aggregate_consistency_reports(scenario_runs, mode=mode))
@@ -1230,6 +1380,8 @@ def main(argv: list[str] | None = None) -> int:
                     mode="RUN",
                     status="FAIL",
                     detail=f"Scenario contract invalid: {'; '.join(issue_lines)}",
+                    repo_root=repo_root,
+                    report_dir=args.report_dir,
                 )
             )
             continue
@@ -1248,6 +1400,8 @@ def main(argv: list[str] | None = None) -> int:
                     mode="RUN",
                     status="FAIL",
                     detail=f"Scenario {entry['name']} not found in {scenario_file}",
+                    repo_root=repo_root,
+                    report_dir=args.report_dir,
                 )
             )
             continue
@@ -1262,6 +1416,8 @@ def main(argv: list[str] | None = None) -> int:
                 status="ERROR",
                 detail=str(exc),
                 infrastructure_failure=True,
+                repo_root=repo_root,
+                report_dir=args.report_dir,
             )
         reports.append(report)
 

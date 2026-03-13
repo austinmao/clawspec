@@ -4,6 +4,9 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+import yaml
+
 from clawspec.runner import run as run_module
 
 
@@ -299,10 +302,11 @@ def test_runner_invokes_agents_locally_with_registered_workspace_id(
     agent_workspace = str((tmp_path / "agents" / "marketing" / "brand").resolve())
 
     monkeypatch.setattr(run_module, "validate_target", _passing_validation)
+    monkeypatch.setattr(run_module, "_configured_gateway_workspace", lambda **kwargs: tmp_path)
     monkeypatch.setattr(
         run_module,
         "_registered_agents",
-        lambda: ({"id": "marketing-brand", "workspace": agent_workspace},),
+        lambda interface=None: ({"id": "marketing-brand", "workspace": agent_workspace},),
     )
 
     def _fake_run(cmd, **kwargs):
@@ -407,6 +411,96 @@ def test_parse_json_payload_tolerates_wrapped_stdout_noise() -> None:
     assert payload["ok"] is True
 
 
+def test_trigger_scenario_rejects_gateway_workspace_mismatch_before_gateway_call(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        run_module,
+        "_configured_gateway_workspace",
+        lambda **kwargs: tmp_path / "wrong-workspace",
+    )
+
+    with pytest.raises(RuntimeError, match="Gateway workspace mismatch"):
+        run_module._trigger_scenario(
+            {
+                "target_type": "skill",
+                "target_path": "skills/newsletter",
+                "trigger": "/send-newsletter",
+            },
+            {
+                "name": "happy-path",
+                "when": {
+                    "invoke": "/send-newsletter Sunday Service",
+                    "params": {"test_mode": True},
+                },
+            },
+            repo_root=tmp_path,
+            gateway_base="http://127.0.0.1:18789",
+            hooks_token="token-123",
+        )
+
+
+def test_trigger_scenario_rejects_unregistered_agent_workspace_before_trigger_fallback(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(run_module, "_configured_gateway_workspace", lambda **kwargs: tmp_path)
+    monkeypatch.setattr(run_module, "_registered_agents", lambda interface=None: ())
+
+    with pytest.raises(RuntimeError, match="No registered OpenClaw agent matches workspace"):
+        run_module._trigger_scenario(
+            {
+                "target_type": "agent",
+                "target_path": "agents/marketing/brand",
+                "trigger": "agents-marketing-brand",
+            },
+            {
+                "name": "smoke",
+                "when": {
+                    "invoke": "Write a draft and save it to memory/drafts/brand/{{today}}-brand.md",
+                    "params": {"test_mode": True},
+                },
+            },
+            repo_root=tmp_path,
+            gateway_base="http://127.0.0.1:18789",
+            hooks_token=None,
+        )
+
+
+def test_runner_persists_infrastructure_report_when_trigger_fails(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    _write_skill_contract(tmp_path)
+    monkeypatch.setattr(run_module, "validate_target", _passing_validation)
+    monkeypatch.setattr(
+        run_module,
+        "_configured_gateway_workspace",
+        lambda **kwargs: tmp_path / "wrong-workspace",
+    )
+
+    exit_code = run_module.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--target",
+            "newsletter",
+            "--scenario",
+            "happy-path",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "INFRASTRUCTURE" in output
+    reports = sorted((tmp_path / "memory" / "logs" / "qa").glob("*newsletter-happy-path-r*.yaml"))
+    assert len(reports) == 1
+    persisted = yaml.safe_load(reports[0].read_text(encoding="utf-8"))
+    assert persisted["status"] == "ERROR"
+    assert persisted["infrastructure_failure"] is True
+    assert "Gateway workspace mismatch" in persisted["detail"]
+    assert persisted["report_path"] == str(reports[0])
+    assert str(reports[0]) in output
+
+
 def test_trigger_scenario_includes_requested_hook_session_key(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
@@ -427,6 +521,7 @@ def test_trigger_scenario_includes_requested_hook_session_key(monkeypatch, tmp_p
         return _Response()
 
     monkeypatch.setattr(run_module.httpx, "post", _fake_post)
+    monkeypatch.setattr(run_module, "_configured_gateway_workspace", lambda **kwargs: tmp_path)
 
     result = run_module._trigger_scenario(
         {
