@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -104,3 +105,111 @@ scenarios:
     reports = evaluate_module.evaluate_contract(scenario_path, run_number=1)
 
     assert reports[0]["status"] == "PASS"
+
+
+def test_evaluate_contract_marks_rate_limit_runs_as_infrastructure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    fixed_now = datetime(2026, 3, 11, 12, 2, tzinfo=UTC)
+    monkeypatch.setattr(evaluate_module, "_utc_now", lambda: fixed_now)
+    monkeypatch.setattr(evaluate_module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(evaluate_module, "REPORT_DIR", tmp_path / "reports")
+
+    log_path = tmp_path / "gateway.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "time": "2026-03-11T12:00:30Z",
+                "message": "embedded run agent end: error=API rate limit reached",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    scenario_path = tmp_path / "skills" / "newsletter" / "tests" / "scenarios.yaml"
+    scenario_path.parent.mkdir(parents=True, exist_ok=True)
+    scenario_path.write_text(
+        """version: "1.0"
+target:
+  type: skill
+  path: skills/newsletter
+  trigger: /send-newsletter
+scenarios:
+  - name: smoke
+    tags: [smoke]
+    when:
+      invoke: /send-newsletter Sunday Service
+    then:
+      - type: artifact_exists
+        path: memory/drafts/{{today}}-newsletter.md
+""",
+        encoding="utf-8",
+    )
+
+    reports = evaluate_module.evaluate_contract(
+        scenario_path,
+        run_number=1,
+        extra_context={
+            "run_started_at": "2026-03-11T12:00:00Z",
+            "gateway_log_path": str(log_path),
+        },
+    )
+
+    assert reports[0]["status"] == "ERROR"
+    assert reports[0]["infrastructure_failure"] is True
+    assert "rate limit" in reports[0]["detail"].casefold()
+
+
+def test_evaluate_contract_ignores_rate_limit_logs_outside_run_window(
+    monkeypatch, tmp_path: Path
+) -> None:
+    fixed_now = datetime(2026, 3, 11, 12, 2, tzinfo=UTC)
+    monkeypatch.setattr(evaluate_module, "_utc_now", lambda: fixed_now)
+    monkeypatch.setattr(evaluate_module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(evaluate_module, "REPORT_DIR", tmp_path / "reports")
+
+    log_path = tmp_path / "gateway.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "time": "2026-03-11T11:59:30Z",
+                "message": "embedded run agent end: error=API rate limit reached",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    scenario_path = tmp_path / "skills" / "newsletter" / "tests" / "scenarios.yaml"
+    scenario_path.parent.mkdir(parents=True, exist_ok=True)
+    scenario_path.write_text(
+        """version: "1.0"
+target:
+  type: skill
+  path: skills/newsletter
+  trigger: /send-newsletter
+scenarios:
+  - name: smoke
+    tags: [smoke]
+    when:
+      invoke: /send-newsletter Sunday Service
+    then:
+      - type: artifact_exists
+        path: memory/drafts/{{today}}-newsletter.md
+""",
+        encoding="utf-8",
+    )
+
+    reports = evaluate_module.evaluate_contract(
+        scenario_path,
+        run_number=1,
+        extra_context={
+            "run_started_at": "2026-03-11T12:00:00Z",
+            "gateway_log_path": str(log_path),
+        },
+    )
+
+    assert reports[0]["status"] == "FAIL"
+    assert reports[0]["infrastructure_failure"] is False
+    assert reports[0]["detail"] is None

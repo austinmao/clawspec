@@ -26,6 +26,7 @@ from clawspec.templates.expander import build_template_context, expand_templates
 from clawspec.validate.validator import validate_target
 
 GATEWAY_BASE = "http://127.0.0.1:18789"
+DEFAULT_TRIGGER_TIMEOUT = 60
 
 
 def _repo_root() -> Path:
@@ -70,9 +71,40 @@ def _scenario_lookup(scenario_file: str | Path) -> tuple[dict[str, Any], dict[st
     return contract, mapping
 
 
+def _contract_defaults(contract: dict[str, Any]) -> dict[str, Any]:
+    defaults = contract.get("defaults", {})
+    return defaults if isinstance(defaults, dict) else {}
+
+
+def _effective_trigger_timeout(
+    *,
+    contract: dict[str, Any],
+    cli_timeout: int | None,
+) -> int:
+    if cli_timeout is not None:
+        return int(cli_timeout)
+
+    contract_timeout = _contract_defaults(contract).get("timeout")
+    if contract_timeout is not None:
+        return int(contract_timeout)
+    return DEFAULT_TRIGGER_TIMEOUT
+
+
 def _resolve_target_file(repo_root: Path, *, target_type: str, target_path: str) -> Path:
     file_name = "SKILL.md" if target_type == "skill" else "SOUL.md"
     return repo_root / target_path / file_name
+
+
+def _skill_target_metadata(entry: dict[str, Any], *, invoke: str) -> dict[str, str]:
+    trigger = str(entry.get("trigger") or invoke).strip()
+    command = trigger.split()[0] if trigger else ""
+    skill_name = command[1:] if command.startswith("/") else command
+    metadata = {
+        "target_path": str(entry.get("target_path") or "").strip(),
+        "target_type": str(entry.get("target_type") or "").strip(),
+        "target_skill_name": skill_name.strip(),
+    }
+    return {key: value for key, value in metadata.items() if value}
 
 
 def _target_label(entry: dict[str, Any]) -> str:
@@ -193,8 +225,9 @@ def _registered_agents(interface: AgentInterface | None = None) -> tuple[dict[st
     if interface is not None:
         payload = interface.list_agents()
     else:
+        command = ["openclaw", "agents", "list", "--json"]
         result = subprocess.run(
-            ["openclaw", "agents", "list", "--json"],
+            command,
             check=True,
             capture_output=True,
             text=True,
@@ -205,9 +238,50 @@ def _registered_agents(interface: AgentInterface | None = None) -> tuple[dict[st
     return tuple(item for item in payload if isinstance(item, dict))
 
 
-def _configured_gateway_workspace(*, repo_root: Path) -> Path | None:
+def _registered_agents_with_profile(openclaw_profile: str) -> tuple[dict[str, Any], ...]:
     result = subprocess.run(
-        ["openclaw", "config", "get", "agents.defaults.workspace"],
+        [*_openclaw_cli_prefix(openclaw_profile), "agents", "list", "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(result.stdout or "[]")
+    if not isinstance(payload, list):
+        raise ValueError("openclaw agents list --json must return a list")
+    return tuple(item for item in payload if isinstance(item, dict))
+
+
+def _openclaw_cli_prefix(openclaw_profile: str | None) -> list[str]:
+    command = ["openclaw"]
+    if openclaw_profile:
+        command.extend(["--profile", openclaw_profile])
+    return command
+
+
+def _effective_openclaw_profile(
+    *,
+    interface: AgentInterface | None,
+    openclaw_profile: str | None,
+) -> str | None:
+    if openclaw_profile:
+        return openclaw_profile
+    if isinstance(interface, OpenClawInterface):
+        return interface.openclaw_profile
+    return None
+
+
+def _configured_gateway_workspace(
+    *,
+    repo_root: Path,
+    openclaw_profile: str | None = None,
+) -> Path | None:
+    result = subprocess.run(
+        [
+            *_openclaw_cli_prefix(openclaw_profile),
+            "config",
+            "get",
+            "agents.defaults.workspace",
+        ],
         check=False,
         capture_output=True,
         text=True,
@@ -224,11 +298,12 @@ def _configured_gateway_workspace(*, repo_root: Path) -> Path | None:
 def _using_local_default_gateway(
     *,
     gateway_base: str,
-    interface: AgentInterface | None,
+    openclaw_profile: str | None,
 ) -> bool:
-    if gateway_base.rstrip("/") != str(GATEWAY_BASE).rstrip("/"):
-        return False
-    return interface is None or isinstance(interface, OpenClawInterface)
+    return (
+        gateway_base.rstrip("/") == str(GATEWAY_BASE).rstrip("/")
+        or openclaw_profile is not None
+    )
 
 
 def _gateway_workspace_mismatch(
@@ -236,11 +311,22 @@ def _gateway_workspace_mismatch(
     repo_root: Path,
     gateway_base: str,
     interface: AgentInterface | None = None,
+    openclaw_profile: str | None = None,
 ) -> str | None:
-    if not _using_local_default_gateway(gateway_base=gateway_base, interface=interface):
+    active_profile = _effective_openclaw_profile(
+        interface=interface,
+        openclaw_profile=openclaw_profile,
+    )
+    if not _using_local_default_gateway(
+        gateway_base=gateway_base,
+        openclaw_profile=active_profile,
+    ):
         return None
 
-    configured = _configured_gateway_workspace(repo_root=repo_root)
+    configured = _configured_gateway_workspace(
+        repo_root=repo_root,
+        openclaw_profile=active_profile,
+    )
     expected = repo_root.resolve()
     if configured is None:
         return (
@@ -268,10 +354,16 @@ def _resolve_agent_id(
     *,
     repo_root: Path,
     interface: AgentInterface | None = None,
+    openclaw_profile: str | None = None,
 ) -> str:
     workspace = str((repo_root / entry["target_path"]).resolve())
     try:
-        registry = _registered_agents() if interface is None else _registered_agents(interface)
+        if interface is None and openclaw_profile is None:
+            registry = _registered_agents()
+        elif interface is None:
+            registry = _registered_agents_with_profile(openclaw_profile)
+        else:
+            registry = _registered_agents(interface)
         matches = [
             str(item.get("id", "")).strip()
             for item in registry
@@ -298,15 +390,28 @@ def _agent_registration_mismatch(
     repo_root: Path,
     gateway_base: str,
     interface: AgentInterface | None = None,
+    openclaw_profile: str | None = None,
 ) -> str | None:
     if entry.get("target_type") != "agent":
         return None
-    if not _using_local_default_gateway(gateway_base=gateway_base, interface=interface):
+    active_profile = _effective_openclaw_profile(
+        interface=interface,
+        openclaw_profile=openclaw_profile,
+    )
+    if not _using_local_default_gateway(
+        gateway_base=gateway_base,
+        openclaw_profile=active_profile,
+    ):
         return None
 
     expected_workspace = str((repo_root / entry["target_path"]).resolve())
     try:
-        registry = _registered_agents(interface)
+        if interface is None and active_profile is None:
+            registry = _registered_agents()
+        elif interface is None:
+            registry = _registered_agents_with_profile(active_profile)
+        else:
+            registry = _registered_agents(interface)
         matches = [
             str(item.get("id", "")).strip()
             for item in registry
@@ -318,7 +423,10 @@ def _agent_registration_mismatch(
     if matches:
         return None
 
-    configured = _configured_gateway_workspace(repo_root=repo_root)
+    configured = _configured_gateway_workspace(
+        repo_root=repo_root,
+        openclaw_profile=active_profile,
+    )
     configured_text = str(configured) if configured is not None else "unknown"
     trigger = str(entry.get("trigger", "")).strip() or "<missing trigger>"
     return (
@@ -364,9 +472,15 @@ def _trigger_agent_scenario(
     *,
     repo_root: Path,
     interface: AgentInterface | None = None,
-    timeout: int = 60,
+    openclaw_profile: str | None = None,
+    timeout: int = DEFAULT_TRIGGER_TIMEOUT,
 ) -> dict[str, Any]:
-    agent_id = _resolve_agent_id(entry, repo_root=repo_root, interface=interface)
+    agent_id = _resolve_agent_id(
+        entry,
+        repo_root=repo_root,
+        interface=interface,
+        openclaw_profile=openclaw_profile,
+    )
     message = _agent_message(scenario)
 
     if interface is not None:
@@ -380,7 +494,7 @@ def _trigger_agent_scenario(
 
     result = subprocess.run(
         [
-            "openclaw",
+            *_openclaw_cli_prefix(openclaw_profile),
             "agent",
             "--local",
             "--agent",
@@ -417,12 +531,14 @@ def _trigger_scenario(
     hooks_token: str | None,
     requested_session_key: str | None = None,
     interface: AgentInterface | None = None,
-    timeout: int = 60,
+    openclaw_profile: str | None = None,
+    timeout: int = DEFAULT_TRIGGER_TIMEOUT,
 ) -> dict[str, Any]:
     mismatch = _gateway_workspace_mismatch(
         repo_root=repo_root,
         gateway_base=gateway_base,
         interface=interface,
+        openclaw_profile=openclaw_profile,
     )
     if mismatch:
         raise RuntimeError(mismatch)
@@ -432,6 +548,7 @@ def _trigger_scenario(
         repo_root=repo_root,
         gateway_base=gateway_base,
         interface=interface,
+        openclaw_profile=openclaw_profile,
     )
     if agent_mismatch:
         raise RuntimeError(agent_mismatch)
@@ -442,6 +559,7 @@ def _trigger_scenario(
             scenario,
             repo_root=repo_root,
             interface=interface,
+            openclaw_profile=openclaw_profile,
             timeout=timeout,
         )
 
@@ -450,6 +568,7 @@ def _trigger_scenario(
     if not invoke:
         raise ValueError(f"Scenario {scenario.get('name')} is missing when.invoke")
 
+    target_metadata = _skill_target_metadata(entry, invoke=invoke)
     if interface is not None:
         return interface.invoke(
             str(entry.get("trigger") or invoke),
@@ -460,6 +579,8 @@ def _trigger_scenario(
             trigger=str(entry.get("trigger") or invoke),
             requested_session_key=requested_session_key,
             repo_root=repo_root,
+            target_path=target_metadata.get("target_path"),
+            target_skill_name=target_metadata.get("target_skill_name"),
         )
 
     headers = {"Content-Type": "application/json"}
@@ -487,6 +608,7 @@ def _trigger_scenario(
             ),
             "test_mode": bool(params.get("test_mode", True)),
         }
+    body.update(target_metadata)
     if requested_session_key:
         body["session_key"] = requested_session_key
 
@@ -778,6 +900,7 @@ def _print_table(title: str, reports: list[dict[str, Any]]) -> None:
 
 def _execute_entry(
     entry: dict[str, Any],
+    contract: dict[str, Any],
     scenario: dict[str, Any],
     *,
     repo_root: Path,
@@ -830,6 +953,10 @@ def _execute_entry(
 
     run_id = provisional_run_id
     if not args.evaluate_only:
+        timeout = _effective_trigger_timeout(
+            contract=contract,
+            cli_timeout=getattr(args, "timeout", None),
+        )
         requested_session_key = (
             f"hook:qa:{_slug(entry['target_path'])}:{_slug(scenario['name'])}:{provisional_run_id}"
             if entry.get("target_type") == "skill"
@@ -843,7 +970,8 @@ def _execute_entry(
             hooks_token=args.hooks_token,
             requested_session_key=requested_session_key,
             interface=interface,
-            timeout=int(args.timeout),
+            openclaw_profile=getattr(args, "openclaw_profile", None),
+            timeout=timeout,
         )
         run_id = str(trigger["run_id"])
 
@@ -928,7 +1056,12 @@ def _run_pipeline(args: argparse.Namespace) -> int:
                 repo_root=repo_root,
                 gateway_base=args.gateway_base,
                 hooks_token=args.hooks_token,
-                timeout=int(args.timeout),
+                openclaw_profile=getattr(args, "openclaw_profile", None),
+                timeout=(
+                    int(args.timeout)
+                    if getattr(args, "timeout", None) is not None
+                    else DEFAULT_TRIGGER_TIMEOUT
+                ),
             )
             run_id = str(response["run_id"])
         except Exception as exc:
@@ -1086,7 +1219,7 @@ def run_contracts(
     tags: list[str] | None = None,
     dry_run: bool = False,
     evaluate_only: bool = False,
-    timeout: int = 60,
+    timeout: int | None = None,
     config: ClawspecConfig,
     interface: AgentInterface | None = None,
 ) -> list[dict[str, Any]]:
@@ -1176,6 +1309,7 @@ def run_contracts(
         evaluate_only=evaluate_only,
         gateway_base=config.gateway_base_url,
         hooks_token=config.gateway_auth_token or _hooks_token(),
+        openclaw_profile=config.openclaw_profile,
         timeout=timeout,
         report_dir=config.report_dir,
         gateway_log_pattern=config.gateway_log_pattern,
@@ -1183,6 +1317,7 @@ def run_contracts(
     active_interface = interface or OpenClawInterface(
         gateway_url=config.gateway_base_url,
         token=config.gateway_auth_token,
+        openclaw_profile=config.openclaw_profile,
         webhook_endpoint=config.gateway_webhook_endpoint,
         cwd=repo_root,
     )
@@ -1198,7 +1333,7 @@ def run_contracts(
         if cached is None:
             cached = _scenario_lookup(scenario_file)
             contract_cache[scenario_file] = cached
-        _, scenarios = cached
+        contract, scenarios = cached
         scenario_payload = scenarios.get(entry["name"])
         if scenario_payload is None:
             reports.append(
@@ -1221,6 +1356,7 @@ def run_contracts(
                 scenario_runs.append(
                     _execute_entry(
                         entry,
+                        contract,
                         scenario_payload,
                         repo_root=repo_root,
                         args=run_args,
@@ -1261,7 +1397,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pipeline", action="store_true", help="Run a pipeline contract")
     parser.add_argument("--repo-root", default=str(_repo_root()), help="Override repository root")
     parser.add_argument("--gateway-base", default=GATEWAY_BASE, help="Override gateway base URL")
-    parser.add_argument("--timeout", type=int, default=60, help="Per-scenario timeout in seconds")
+    parser.add_argument(
+        "--openclaw-profile",
+        help=(
+            "Use a specific local OpenClaw profile for config lookup, "
+            "agent registry, and agent invocation"
+        ),
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        help="Override per-scenario trigger timeout in seconds",
+    )
     parser.add_argument(
         "--report-dir",
         default="memory/logs/qa",
@@ -1390,7 +1537,7 @@ def main(argv: list[str] | None = None) -> int:
         if cached is None:
             cached = _scenario_lookup(scenario_file)
             contract_cache[scenario_file] = cached
-        _, scenarios = cached
+        contract, scenarios = cached
         scenario = scenarios.get(entry["name"])
         if scenario is None:
             reports.append(
@@ -1407,7 +1554,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         try:
-            report = _execute_entry(entry, scenario, repo_root=repo_root, args=args)
+            report = _execute_entry(entry, contract, scenario, repo_root=repo_root, args=args)
         except Exception as exc:
             report = _synthetic_report(
                 entry=entry,

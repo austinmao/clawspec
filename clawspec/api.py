@@ -64,13 +64,14 @@ def run(
     scenario: str | None = None,
     tags: list[str] | None = None,
     dry_run: bool = False,
-    timeout: int = 60,
+    timeout: int | None = None,
     config: ClawspecConfig | None = None,
 ) -> list[RunReport]:
     active_config = _load_config(config, target=target)
     interface = OpenClawInterface(
         gateway_url=gateway or active_config.gateway_base_url,
         token=active_config.gateway_auth_token,
+        openclaw_profile=active_config.openclaw_profile,
         webhook_endpoint=active_config.gateway_webhook_endpoint,
         cwd=active_config.root_dir,
     )

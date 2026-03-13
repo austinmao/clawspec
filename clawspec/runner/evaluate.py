@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -14,6 +15,14 @@ from clawspec.schema_validator import validate_contract_file
 from clawspec.templates.expander import DEFAULT_QA_INBOX, build_template_context, expand_templates
 
 REPORT_DIR = Path("reports")
+_RUNTIME_VOLATILITY_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("api rate limit reached", "Provider/API rate limit reached during the run."),
+    ("rate limit", "Provider/API rate limit reached during the run."),
+    ("too many requests", "Provider/API rate limit reached during the run."),
+    ("session lock", "Session lock detected during the run."),
+    ("lock is held", "Session lock detected during the run."),
+    ("gateway error", "Gateway error detected during the run."),
+)
 
 
 def _repo_root() -> Path:
@@ -74,14 +83,69 @@ def _build_feedback(assertions: list[dict[str, Any]], source_path: Path) -> dict
 def _detect_infrastructure_failure(
     assertion_results: list[dict[str, Any]],
     context: dict[str, Any],
-) -> bool:
+    *,
+    completed_at: datetime,
+) -> str | None:
+    runtime_volatility = _detect_runtime_volatility(context, completed_at=completed_at)
+    if runtime_volatility is not None:
+        return runtime_volatility
+
     timed_out = any(
         "timed out" in (result.get("detail") or "").casefold() for result in assertion_results
     )
     if not timed_out:
-        return False
+        return None
     health_result = dispatch_assertion({"type": "gateway_healthy"}, context)
-    return health_result["status"] != "PASS"
+    if health_result["status"] != "PASS":
+        return "Gateway became unhealthy during a timed-out run."
+    return None
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(normalized).astimezone(UTC)
+    except ValueError:
+        return None
+
+
+def _detect_runtime_volatility(
+    context: dict[str, Any],
+    *,
+    completed_at: datetime,
+) -> str | None:
+    gateway_log_path = Path(_default_gateway_log_path(context))
+    if not gateway_log_path.exists():
+        return None
+
+    started_at = _parse_timestamp(str(context.get("run_started_at") or ""))
+    if started_at is None:
+        return None
+    finished_at = completed_at.astimezone(UTC)
+
+    for raw_line in gateway_log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        timestamp = None
+        try:
+            payload = json.loads(raw_line)
+        except json.JSONDecodeError:
+            payload = None
+
+        if isinstance(payload, dict):
+            timestamp = _parse_timestamp(
+                str(payload.get("time") or payload.get("_meta", {}).get("date") or "")
+            )
+        if timestamp is not None and (timestamp < started_at or timestamp > finished_at):
+            continue
+
+        haystack = raw_line.casefold()
+        for pattern, detail in _RUNTIME_VOLATILITY_PATTERNS:
+            if pattern in haystack:
+                return detail
+    return None
 
 
 def _resolve_report_dir(report_dir: str | Path | None, *, repo_root: Path | None) -> Path:
@@ -236,11 +300,12 @@ def evaluate_contract(
                 scenario.get("then", []),
                 {"workflow": workflow, "scenario": scenario["name"], **base_context},
             )
+            completed_at = _utc_now()
             infrastructure_failure = _detect_infrastructure_failure(
                 assertion_results,
                 {"workflow": workflow, "scenario": scenario["name"], **base_context},
+                completed_at=completed_at,
             )
-            completed_at = _utc_now()
             report = {
                 "workflow": workflow,
                 "scenario": scenario["name"],
@@ -249,8 +314,9 @@ def evaluate_contract(
                 "started_at": started_at.isoformat().replace("+00:00", "Z"),
                 "completed_at": completed_at.isoformat().replace("+00:00", "Z"),
                 "assertions": assertion_results,
+                "detail": infrastructure_failure,
                 "feedback": _build_feedback(assertion_results, source_path),
-                "infrastructure_failure": infrastructure_failure,
+                "infrastructure_failure": infrastructure_failure is not None,
             }
             report["report_path"] = str(
                 _write_report(
@@ -282,8 +348,12 @@ def evaluate_contract(
 
     context = {"workflow": workflow, "scenario": contract_name, **base_context}
     assertion_results = _evaluate_assertions(assertion_blocks, context)
-    infrastructure_failure = _detect_infrastructure_failure(assertion_results, context)
     completed_at = _utc_now()
+    infrastructure_failure = _detect_infrastructure_failure(
+        assertion_results,
+        context,
+        completed_at=completed_at,
+    )
     report = {
         "workflow": workflow,
         "scenario": contract_name,
@@ -292,8 +362,9 @@ def evaluate_contract(
         "started_at": started_at.isoformat().replace("+00:00", "Z"),
         "completed_at": completed_at.isoformat().replace("+00:00", "Z"),
         "assertions": assertion_results,
+        "detail": infrastructure_failure,
         "feedback": _build_feedback(assertion_results, source_path),
-        "infrastructure_failure": infrastructure_failure,
+        "infrastructure_failure": infrastructure_failure is not None,
     }
     report["report_path"] = str(
         _write_report(

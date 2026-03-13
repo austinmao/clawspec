@@ -96,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--tags")
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--json", action="store_true")
-    run_parser.add_argument("--timeout", type=int, default=60)
+    run_parser.add_argument("--timeout", type=int)
 
     init_parser = subparsers.add_parser("init")
     init_parser.add_argument("target", nargs="?")

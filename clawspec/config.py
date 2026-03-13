@@ -11,6 +11,7 @@ _ENV_MAP = {
     "gateway_base_url": "CLAWSPEC_GATEWAY_BASE_URL",
     "gateway_webhook_endpoint": "CLAWSPEC_GATEWAY_WEBHOOK_ENDPOINT",
     "gateway_auth_token": "CLAWSPEC_GATEWAY_AUTH_TOKEN",
+    "openclaw_profile": "CLAWSPEC_OPENCLAW_PROFILE",
     "report_dir": "CLAWSPEC_REPORT_DIR",
     "gateway_log_pattern": "CLAWSPEC_GATEWAY_LOG_PATTERN",
     "scenario_patterns": "CLAWSPEC_SCENARIO_PATTERNS",
@@ -42,6 +43,7 @@ class ClawspecConfig:
     gateway_base_url: str = "http://127.0.0.1:18789"
     gateway_webhook_endpoint: str = "/webhook/mcp-skill-invoke"
     gateway_auth_token: str | None = None
+    openclaw_profile: str | None = None
     report_dir: Path = Path("reports")
     gateway_log_pattern: str = "/tmp/openclaw/openclaw-{date}.log"
     scenario_patterns: list[str] = field(

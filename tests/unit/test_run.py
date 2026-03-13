@@ -10,7 +10,12 @@ import yaml
 from clawspec.runner import run as run_module
 
 
-def _write_skill_contract(repo_root: Path, *, include_negative: bool = True) -> Path:
+def _write_skill_contract(
+    repo_root: Path,
+    *,
+    include_negative: bool = True,
+    default_timeout: int | None = None,
+) -> Path:
     skill_dir = repo_root / "skills" / "newsletter"
     (skill_dir / "tests").mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(
@@ -39,6 +44,14 @@ permissions:
         if include_negative
         else ""
     )
+    defaults_block = (
+        f"""
+defaults:
+  timeout: {default_timeout}
+"""
+        if default_timeout is not None
+        else ""
+    )
 
     contract_path = skill_dir / "tests" / "scenarios.yaml"
     contract_path.write_text(
@@ -48,6 +61,7 @@ target:
   path: skills/newsletter
   trigger: /send-newsletter
 
+{defaults_block}\
 scenarios:
   - name: happy-path
     tags: [smoke]
@@ -405,6 +419,102 @@ def test_runner_passes_run_started_at_into_evaluation_context(
     assert extra_context["run_started_at"].endswith("Z")
 
 
+def test_runner_uses_contract_default_timeout_when_cli_timeout_not_set(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    _write_skill_contract(tmp_path, default_timeout=240)
+    monkeypatch.setattr(run_module, "validate_target", _passing_validation)
+
+    captured: dict[str, object] = {}
+
+    def _fake_trigger(*args, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        return {"run_id": "run-123", "status": "accepted"}
+
+    monkeypatch.setattr(run_module, "_trigger_scenario", _fake_trigger)
+    monkeypatch.setattr(
+        run_module,
+        "evaluate_contract",
+        lambda *args, **kwargs: [
+            {
+                "workflow": "newsletter",
+                "scenario": kwargs["scenario_name"],
+                "run": 1,
+                "status": "PASS",
+                "report_path": str(tmp_path / "memory/logs/qa/newsletter-happy-path-r1.yaml"),
+                "infrastructure_failure": False,
+                "assertions": [],
+                "feedback": None,
+            }
+        ],
+    )
+
+    exit_code = run_module.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--target",
+            "newsletter",
+            "--scenario",
+            "happy-path",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "PASS" in output
+    assert captured["timeout"] == 240
+
+
+def test_runner_cli_timeout_overrides_contract_default_timeout(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    _write_skill_contract(tmp_path, default_timeout=240)
+    monkeypatch.setattr(run_module, "validate_target", _passing_validation)
+
+    captured: dict[str, object] = {}
+
+    def _fake_trigger(*args, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        return {"run_id": "run-123", "status": "accepted"}
+
+    monkeypatch.setattr(run_module, "_trigger_scenario", _fake_trigger)
+    monkeypatch.setattr(
+        run_module,
+        "evaluate_contract",
+        lambda *args, **kwargs: [
+            {
+                "workflow": "newsletter",
+                "scenario": kwargs["scenario_name"],
+                "run": 1,
+                "status": "PASS",
+                "report_path": str(tmp_path / "memory/logs/qa/newsletter-happy-path-r1.yaml"),
+                "infrastructure_failure": False,
+                "assertions": [],
+                "feedback": None,
+            }
+        ],
+    )
+
+    exit_code = run_module.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--target",
+            "newsletter",
+            "--scenario",
+            "happy-path",
+            "--timeout",
+            "90",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "PASS" in output
+    assert captured["timeout"] == 90
+
+
 def test_parse_json_payload_tolerates_wrapped_stdout_noise() -> None:
     payload = run_module._parse_json_payload('warning\n{"ok": true, "meta": {}}\n')
 
@@ -437,6 +547,36 @@ def test_trigger_scenario_rejects_gateway_workspace_mismatch_before_gateway_call
             repo_root=tmp_path,
             gateway_base="http://127.0.0.1:18789",
             hooks_token="token-123",
+        )
+
+
+def test_trigger_scenario_rejects_gateway_workspace_mismatch_for_profile_on_custom_gateway(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        run_module,
+        "_configured_gateway_workspace",
+        lambda **kwargs: tmp_path / "wrong-workspace",
+    )
+
+    with pytest.raises(RuntimeError, match="Gateway workspace mismatch"):
+        run_module._trigger_scenario(
+            {
+                "target_type": "skill",
+                "target_path": "skills/newsletter",
+                "trigger": "/send-newsletter",
+            },
+            {
+                "name": "happy-path",
+                "when": {
+                    "invoke": "/send-newsletter Sunday Service",
+                    "params": {"test_mode": True},
+                },
+            },
+            repo_root=tmp_path,
+            gateway_base="http://127.0.0.1:19001",
+            hooks_token="token-123",
+            openclaw_profile="dev",
         )
 
 
@@ -551,6 +691,126 @@ def test_trigger_scenario_includes_requested_hook_session_key(monkeypatch, tmp_p
     assert captured["json"] == {
         "skill_command": "/send-newsletter Sunday Service",
         "payload": '{"audience": "qa", "test_mode": true}',
+        "target_path": "skills/newsletter",
+        "target_type": "skill",
+        "target_skill_name": "send-newsletter",
         "test_mode": True,
         "session_key": "hook:qa:newsletter:happy-path:run-123",
     }
+
+
+def test_trigger_scenario_passes_skill_identity_to_interface(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(run_module, "_configured_gateway_workspace", lambda **kwargs: tmp_path)
+
+    captured: dict[str, object] = {}
+
+    class _Interface:
+        def list_agents(self) -> list[dict[str, str]]:
+            return []
+
+        def invoke(self, agent_id: str, message: str, *, timeout: int = 60, **kwargs):
+            captured["agent_id"] = agent_id
+            captured["message"] = message
+            captured["timeout"] = timeout
+            captured["kwargs"] = kwargs
+            return {"status": "accepted", "run_id": "run-123", "response": {}}
+
+        def health_check(self) -> bool:
+            return True
+
+    result = run_module._trigger_scenario(
+        {
+            "target_type": "skill",
+            "target_path": "skills/newsletter/sub-skills/brief",
+            "trigger": "/newsletter-brief",
+        },
+        {
+            "name": "brief-smoke",
+            "when": {
+                "invoke": "/newsletter-brief Sunday Service",
+                "params": {"test_mode": True},
+            },
+        },
+        repo_root=tmp_path,
+        gateway_base="http://127.0.0.1:19011",
+        hooks_token="token-123",
+        interface=_Interface(),
+        timeout=240,
+    )
+
+    assert result["run_id"] == "run-123"
+    assert captured["agent_id"] == "/newsletter-brief"
+    assert captured["message"] == "/newsletter-brief Sunday Service"
+    assert captured["timeout"] == 240
+    assert captured["kwargs"] == {
+        "target_type": "skill",
+        "params": {"test_mode": True},
+        "trigger": "/newsletter-brief",
+        "requested_session_key": None,
+        "repo_root": tmp_path,
+        "target_path": "skills/newsletter/sub-skills/brief",
+        "target_skill_name": "newsletter-brief",
+    }
+
+
+def test_runner_invokes_agents_locally_with_explicit_openclaw_profile(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    contract_path = _write_agent_contract(tmp_path)
+    agent_workspace = str((tmp_path / "agents" / "marketing" / "brand").resolve())
+
+    monkeypatch.setattr(run_module, "validate_target", _passing_validation)
+    monkeypatch.setattr(run_module, "_configured_gateway_workspace", lambda **kwargs: tmp_path)
+    monkeypatch.setattr(
+        run_module,
+        "_registered_agents_with_profile",
+        lambda profile: ({"id": "marketing-brand", "workspace": agent_workspace},),
+    )
+
+    def _fake_run(cmd, **kwargs):
+        assert cmd[:7] == [
+            "openclaw",
+            "--profile",
+            "dev",
+            "agent",
+            "--local",
+            "--agent",
+            "marketing-brand",
+        ]
+        payload = {"meta": {"agentMeta": {"sessionId": "session-456"}}}
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(run_module.subprocess, "run", _fake_run)
+    monkeypatch.setattr(
+        run_module,
+        "evaluate_contract",
+        lambda *args, **kwargs: [
+            {
+                "workflow": "brand",
+                "scenario": kwargs["scenario_name"],
+                "run": 1,
+                "status": "PASS",
+                "report_path": str(contract_path),
+                "infrastructure_failure": False,
+                "assertions": [],
+                "feedback": None,
+            }
+        ],
+    )
+
+    exit_code = run_module.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--target",
+            "brand",
+            "--scenario",
+            "smoke",
+            "--openclaw-profile",
+            "dev",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "PASS" in output

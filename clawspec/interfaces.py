@@ -31,13 +31,21 @@ class OpenClawInterface:
         gateway_url: str = "http://127.0.0.1:18789",
         token: str | None = None,
         *,
+        openclaw_profile: str | None = None,
         webhook_endpoint: str = "/webhook/mcp-skill-invoke",
         cwd: str | Path | None = None,
     ) -> None:
         self.gateway_url = gateway_url.rstrip("/")
         self.token = token
+        self.openclaw_profile = openclaw_profile
         self.webhook_endpoint = webhook_endpoint
         self.cwd = Path(cwd).resolve() if cwd is not None else None
+
+    def _cli_prefix(self) -> list[str]:
+        cmd = ["openclaw"]
+        if self.openclaw_profile:
+            cmd.extend(["--profile", self.openclaw_profile])
+        return cmd
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -50,7 +58,7 @@ class OpenClawInterface:
             return []
         try:
             result = subprocess.run(
-                ["openclaw", "agents", "list", "--json"],
+                [*self._cli_prefix(), "agents", "list", "--json"],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -79,6 +87,9 @@ class OpenClawInterface:
             params=kwargs.get("params"),
             trigger=kwargs.get("trigger"),
             requested_session_key=kwargs.get("requested_session_key"),
+            target_path=kwargs.get("target_path"),
+            target_type=target_type,
+            target_skill_name=kwargs.get("target_skill_name"),
         )
 
     def _invoke_agent(
@@ -94,7 +105,7 @@ class OpenClawInterface:
         try:
             result = subprocess.run(
                 [
-                    "openclaw",
+                    *self._cli_prefix(),
                     "agent",
                     "--local",
                     "--agent",
@@ -134,6 +145,9 @@ class OpenClawInterface:
         params: dict[str, Any] | None = None,
         trigger: str | None = None,
         requested_session_key: str | None = None,
+        target_path: str | None = None,
+        target_type: str | None = None,
+        target_skill_name: str | None = None,
     ) -> dict[str, Any]:
         invoke = message.strip()
         payload_params = params or {}
@@ -149,6 +163,12 @@ class OpenClawInterface:
                 "payload": json.dumps({"invoke": invoke, "params": payload_params}, sort_keys=True),
                 "test_mode": bool(payload_params.get("test_mode", True)),
             }
+        if target_path:
+            body["target_path"] = target_path
+        if target_type:
+            body["target_type"] = target_type
+        if target_skill_name:
+            body["target_skill_name"] = target_skill_name
         if requested_session_key:
             body["session_key"] = requested_session_key
 
