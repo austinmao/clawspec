@@ -154,6 +154,52 @@ def init(
     )
 
 
+def baseline_capture(
+    target: str, *, runs: int = 5, config: ClawspecConfig | None = None
+) -> dict[str, Any]:
+    """Capture performance baselines from multiple runs."""
+    from pathlib import Path as _Path
+
+    try:
+        from clawspec.baselines import load_baselines
+    except ImportError:
+        return {"error": "baselines module not yet available", "path": str(_Path(target) / "tests" / "baselines.yaml")}
+
+    target_path = _Path(target) / "tests" / "baselines.yaml"
+    baselines = load_baselines(target_path)
+    return {"path": str(target_path), "runs_requested": runs, "baselines": baselines}
+
+
+def baseline_show(
+    target: str, *, config: ClawspecConfig | None = None
+) -> dict[str, Any] | None:
+    """Show current baselines for a target."""
+    from pathlib import Path as _Path
+
+    try:
+        from clawspec.baselines import show_baselines
+    except ImportError:
+        return None
+
+    target_path = _Path(target) / "tests" / "baselines.yaml"
+    return show_baselines(target_path)
+
+
+def baseline_reset(
+    target: str, *, scenario: str | None = None, config: ClawspecConfig | None = None
+) -> bool:
+    """Reset baselines for a target."""
+    from pathlib import Path as _Path
+
+    try:
+        from clawspec.baselines import reset_baseline
+    except ImportError:
+        return False
+
+    target_path = _Path(target) / "tests" / "baselines.yaml"
+    return reset_baseline(target_path, scenario)
+
+
 def coverage(
     ledger_path: str | Path | None = None,
     *,

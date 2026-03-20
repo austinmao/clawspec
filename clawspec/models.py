@@ -69,6 +69,19 @@ class ScenarioResult:
     run_number: int
     detail: str | None = None
     report_path: str | None = None
+    trace: dict[str, Any] | None = None  # {id, url, duration_ms, total_tokens, total_cost_usd, cost_is_estimated, spans_summary, enrichment}
+    regression: dict[str, Any] | None = None  # {baseline_date, compare, status, checks[]}
+
+
+@dataclass
+class ObservabilityRunSummary:
+    """Run-level observability aggregation."""
+
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+    total_duration_ms: float = 0.0
+    observability_backend: str | None = None
+    backend_available: bool = False
 
 
 @dataclass
@@ -88,6 +101,7 @@ class RunReport:
     exit_code: int
     timestamp: str = field(default_factory=utc_now)
     report_path: str | None = None
+    observability: ObservabilityRunSummary | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return _json_safe(self)

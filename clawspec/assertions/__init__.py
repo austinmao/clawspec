@@ -68,6 +68,17 @@ def load_default_assertions() -> None:
         permission_handlers,
     ):
         _REGISTRY.update(mapping)
+    _load_trace_assertions()
+
+
+def _load_trace_assertions() -> None:
+    """Load trace-aware assertion types (observability integration)."""
+    try:
+        from clawspec.assertions.trace import register_trace_assertions
+
+        register_trace_assertions(register_assertion)
+    except ImportError:
+        pass  # trace module not available
 
 
 def dispatch_assertion(assertion: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:

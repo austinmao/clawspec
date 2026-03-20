@@ -15,6 +15,7 @@ _ENV_MAP = {
     "gateway_log_pattern": "CLAWSPEC_GATEWAY_LOG_PATTERN",
     "scenario_patterns": "CLAWSPEC_SCENARIO_PATTERNS",
     "ledger_path": "CLAWSPEC_LEDGER_PATH",
+    "observability_backend": "CLAWSPEC_OBSERVABILITY_BACKEND",
 }
 
 
@@ -52,6 +53,13 @@ class ClawspecConfig:
     )
     ledger_path: Path = Path("coverage-ledger.yaml")
     root_dir: Path = field(default_factory=_cwd)
+    # Observability (optional)
+    observability_backend: str = "none"  # "opik" or "none"
+    trace_poll_delay_ms: int = 3000
+    time_window_padding_ms: int = 10000
+    model_pricing: dict[str, dict[str, float]] = field(default_factory=dict)
+    opik_project_name: str = ""
+    opik_workspace: str = ""
 
     @classmethod
     def load(
@@ -89,6 +97,22 @@ class ClawspecConfig:
             merged["report_dir"] = Path(merged["report_dir"])
         if "ledger_path" in merged:
             merged["ledger_path"] = Path(merged["ledger_path"])
+
+        obs = data.get("observability", {})
+        if obs:
+            if "observability_backend" not in env_values and "observability_backend" not in (overrides or {}):
+                merged["observability_backend"] = str(obs.get("backend", "none"))
+            merged["trace_poll_delay_ms"] = int(obs.get("trace_poll_delay_ms", 3000))
+            merged["time_window_padding_ms"] = int(obs.get("time_window_padding_ms", 10000))
+            merged["model_pricing"] = obs.get("model_pricing", {})
+            opik_cfg = obs.get("opik", {})
+            merged["opik_project_name"] = str(opik_cfg.get("project_name", ""))
+            merged["opik_workspace"] = str(opik_cfg.get("workspace", ""))
+
+        # Strip unknown keys before passing to dataclass constructor
+        known_fields = {f.name for f in ClawspecConfig.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+        merged = {k: v for k, v in merged.items() if k in known_fields}
+
         return cls(**merged)
 
     def resolve_path(self, path: str | Path) -> Path:

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from clawspec import __version__
-from clawspec.api import coverage, init, run, validate
+from clawspec.api import baseline_capture, baseline_reset, baseline_show, coverage, init, run, validate
 from clawspec.config import ClawspecConfig
 from clawspec.exceptions import ClawspecError, SchemaError
 
@@ -106,6 +106,24 @@ def build_parser() -> argparse.ArgumentParser:
     coverage_parser = subparsers.add_parser("coverage")
     coverage_parser.add_argument("--ledger")
     coverage_parser.add_argument("--json", action="store_true")
+
+    baseline_parser = subparsers.add_parser("baseline", help="Manage performance baselines")
+    baseline_sub = baseline_parser.add_subparsers(dest="baseline_command")
+
+    capture_parser = baseline_sub.add_parser("capture", help="Capture baseline from multiple runs")
+    capture_parser.add_argument("target", help="Target to baseline")
+    capture_parser.add_argument("--runs", type=int, default=5, help="Number of runs (min 5, recommended 20+)")
+    capture_parser.add_argument("--json", action="store_true")
+
+    show_parser = baseline_sub.add_parser("show", help="Display current baselines")
+    show_parser.add_argument("target", help="Target to show baselines for")
+    show_parser.add_argument("--json", action="store_true")
+
+    reset_parser = baseline_sub.add_parser("reset", help="Reset baselines")
+    reset_parser.add_argument("target", help="Target to reset")
+    reset_parser.add_argument("--scenario", help="Reset specific scenario only")
+    reset_parser.add_argument("--json", action="store_true")
+
     return parser
 
 
@@ -140,6 +158,28 @@ def main(argv: list[str] | None = None) -> int:
             )
             _emit(payload, as_json=args.json)
             return 0
+        if args.command == "coverage":
+            payload = coverage(args.ledger, config=_config_from_args(args))
+            _emit(payload, as_json=args.json)
+            return 1 if payload.gaps else 0
+        if args.command == "baseline":
+            cfg = _config_from_args(args)
+            baseline_command = getattr(args, "baseline_command", None)
+            if baseline_command == "capture":
+                result = baseline_capture(args.target, runs=args.runs, config=cfg)
+                _emit(result, as_json=args.json)
+                return 0
+            if baseline_command == "show":
+                result = baseline_show(args.target, config=cfg)
+                _emit(result, as_json=args.json)
+                return 0 if result is not None else 1
+            if baseline_command == "reset":
+                ok = baseline_reset(args.target, scenario=args.scenario, config=cfg)
+                _emit({"reset": ok}, as_json=args.json)
+                return 0 if ok else 1
+            # No sub-command given — print help
+            print("Usage: clawspec baseline {capture,show,reset}")
+            return 2
         payload = coverage(args.ledger, config=_config_from_args(args))
         _emit(payload, as_json=args.json)
         return 1 if payload.gaps else 0
