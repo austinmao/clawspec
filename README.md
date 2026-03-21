@@ -71,6 +71,26 @@ clawspec baseline show skills/my-skill
 
 Add a `regression:` block to any scenario contract to enforce drift thresholds in CI. See [docs/baselines-and-regression-detection.md](docs/baselines-and-regression-detection.md).
 
+## Using with ClawScaffold
+
+[ClawScaffold](https://github.com/austinmao/clawscaffold) is the spec-first target lifecycle manager for OpenClaw. When used together, ClawScaffold auto-generates ClawSpec test scenarios during agent/skill adoption and creation.
+
+```bash
+pip install clawscaffold[spec]   # installs both packages
+```
+
+When both are installed:
+- `clawscaffold adopt` auto-generates `tests/scenarios.yaml` with ClawSpec assertions
+- `clawscaffold audit` uses ClawSpec validation for structural checks
+- `clawscaffold create` scaffolds test contracts alongside the target spec
+
+ClawSpec works independently — you don't need ClawScaffold to write and run test contracts.
+
+## Related Projects
+
+- **[ClawScaffold](https://github.com/austinmao/clawscaffold)** — Spec-first target lifecycle manager (interactive interviews, adoption, auditing)
+- **[OpenClaw](https://github.com/austinmao/openclaw)** — Local-first AI agent framework (LLM + chat channels + Markdown skills)
+
 ## Config
 
 ClawSpec looks for `clawspec.yaml` from the target directory upward.
