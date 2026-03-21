@@ -17,7 +17,9 @@ ClawSpec ships:
 - `clawspec run`
 - `clawspec init`
 - `clawspec coverage`
-- 19 shipped assertion types
+- `clawspec baseline` — performance baseline capture and regression detection
+- 29 shipped assertion types (19 standard + 10 trace-aware)
+- Observability integration via Opik — one-click trace debugging from any failing assertion
 - a Python API and an OpenClaw skill wrapper
 
 ## Install
@@ -36,6 +38,38 @@ clawspec init examples/basic/skills/hello --force
 clawspec run examples/basic/skills/hello --scenario hello-smoke --dry-run
 clawspec coverage --ledger examples/ceremonia/coverage-ledger.yaml --json
 ```
+
+## Opik observability integration
+
+Connect ClawSpec to [Opik](https://www.comet.com/opik) to get trace URLs in every report and unlock 10 trace-aware assertion types.
+
+```bash
+pip install clawspec[opik]
+export OPIK_API_KEY=your-key
+```
+
+Add to `clawspec.yaml`:
+
+```yaml
+observability:
+  backend: opik
+  opik:
+    project_name: my-project
+    workspace: my-workspace
+```
+
+When observability is active, each report includes a `trace_url` pointing directly to the run in the Opik dashboard. See [docs/observability-integration.md](docs/observability-integration.md) for full setup instructions.
+
+## Baselines and regression detection
+
+Capture performance baselines to detect regressions in cost, latency, and token usage:
+
+```bash
+clawspec baseline capture skills/my-skill --runs 20
+clawspec baseline show skills/my-skill
+```
+
+Add a `regression:` block to any scenario contract to enforce drift thresholds in CI. See [docs/baselines-and-regression-detection.md](docs/baselines-and-regression-detection.md).
 
 ## Config
 
@@ -81,11 +115,14 @@ coverage("examples/ceremonia/coverage-ledger.yaml")
 ## Docs
 
 - [docs/quick-start.md](docs/quick-start.md)
+- [docs/configuration-reference.md](docs/configuration-reference.md)
+- [docs/assertion-reference.md](docs/assertion-reference.md)
+- [docs/observability-integration.md](docs/observability-integration.md)
+- [docs/baselines-and-regression-detection.md](docs/baselines-and-regression-detection.md)
 - [docs/compiler-integration.md](docs/compiler-integration.md)
 - [docs/contract-first-methodology.md](docs/contract-first-methodology.md)
 - [docs/building-new-pipelines.md](docs/building-new-pipelines.md)
 - [docs/migrating-existing-agents.md](docs/migrating-existing-agents.md)
-- [docs/assertion-reference.md](docs/assertion-reference.md)
 - [docs/launch-posts.md](docs/launch-posts.md)
 
 ## License
