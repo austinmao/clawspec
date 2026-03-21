@@ -88,6 +88,7 @@ ClawSpec works independently — you don't need ClawScaffold to write and run te
 
 ## Related Projects
 
+- **[ClawWrap](https://github.com/austinmao/clawwrap)** — Spec-first outbound message routing gate (policy enforcement, audit trail)
 - **[ClawScaffold](https://github.com/austinmao/clawscaffold)** — Spec-first target lifecycle manager (interactive interviews, adoption, auditing)
 - **[OpenClaw](https://github.com/austinmao/openclaw)** — Local-first AI agent framework (LLM + chat channels + Markdown skills)
 
