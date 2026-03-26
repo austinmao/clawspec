@@ -39,6 +39,18 @@ async function runCli(pythonBin, repoRoot, args, timeoutMs) {
   catch { return { output: raw.slice(0, 2000), stderr: (stderr || "").trim().slice(0, 500) }; }
 }
 
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+      catch { resolve({}); }
+    });
+    req.on("error", reject);
+  });
+}
+
 export function register(api) {
   const { repoRoot, pythonBin, timeoutMs } = resolveConfig(api);
 
@@ -113,7 +125,141 @@ export function register(api) {
     },
   });
 
-  console.log("[clawspec] tool registered");
+  // --- HTTP webhook routes ---
+
+  api.registerHttpRoute({
+    path: "/clawspec/validate",
+    auth: "gateway",
+    match: "exact",
+    handler: async (req, res) => {
+      const body = await readBody(req);
+      const args = ["validate"];
+      if (body.contract_path) args.push(String(body.contract_path));
+      try {
+        const result = await runCli(pythonBin, repoRoot, args, timeoutMs);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "error", error: err.message }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/clawspec/run",
+    auth: "gateway",
+    match: "exact",
+    handler: async (req, res) => {
+      const body = await readBody(req);
+      const args = ["run"];
+      if (body.contract_path) args.push(String(body.contract_path));
+      if (body.report_dir) args.push("--report-dir", String(body.report_dir));
+      try {
+        const result = await runCli(pythonBin, repoRoot, args, timeoutMs);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "error", error: err.message }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/clawspec/init",
+    auth: "gateway",
+    match: "exact",
+    handler: async (req, res) => {
+      const body = await readBody(req);
+      const args = ["init"];
+      if (body.target_dir) args.push("--target", String(body.target_dir));
+      try {
+        const result = await runCli(pythonBin, repoRoot, args, timeoutMs);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "error", error: err.message }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/clawspec/coverage",
+    auth: "gateway",
+    match: "exact",
+    handler: async (req, res) => {
+      const args = ["coverage"];
+      try {
+        const result = await runCli(pythonBin, repoRoot, args, timeoutMs);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "error", error: err.message }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/clawspec/baseline-capture",
+    auth: "gateway",
+    match: "exact",
+    handler: async (req, res) => {
+      const body = await readBody(req);
+      const args = ["baseline", "capture"];
+      if (body.pipeline_name) args.push("--name", String(body.pipeline_name));
+      try {
+        const result = await runCli(pythonBin, repoRoot, args, timeoutMs);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "error", error: err.message }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/clawspec/baseline-show",
+    auth: "gateway",
+    match: "exact",
+    handler: async (req, res) => {
+      const body = await readBody(req);
+      const args = ["baseline", "show"];
+      if (body.pipeline_name) args.push("--name", String(body.pipeline_name));
+      try {
+        const result = await runCli(pythonBin, repoRoot, args, timeoutMs);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "error", error: err.message }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/clawspec/baseline-reset",
+    auth: "gateway",
+    match: "exact",
+    handler: async (req, res) => {
+      const body = await readBody(req);
+      const args = ["baseline", "reset"];
+      if (body.pipeline_name) args.push("--name", String(body.pipeline_name));
+      try {
+        const result = await runCli(pythonBin, repoRoot, args, timeoutMs);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "error", error: err.message }));
+      }
+    },
+  });
+
+  console.log("[clawspec] tool + 7 HTTP routes registered");
 }
 
 export function activate(api) { register(api); }
