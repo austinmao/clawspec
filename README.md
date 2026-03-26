@@ -146,17 +146,65 @@ coverage("examples/ceremonia/coverage-ledger.yaml")
 - [docs/migrating-existing-agents.md](docs/migrating-existing-agents.md)
 - [docs/launch-posts.md](docs/launch-posts.md)
 
-## OpenClaw Suite
+## OpenClaw Gateway Plugin
 
-Part of the OpenClaw open-source toolchain:
+ClawSpec ships with a gateway plugin that registers the `clawspec` tool directly in the OpenClaw gateway. The plugin delegates all actions to the Python CLI via `child_process`.
+
+### Installation
+
+1. Copy the `extensions/clawspec/` directory into your OpenClaw workspace:
+
+```bash
+cp -r extensions/clawspec/ ~/.openclaw/extensions/clawspec/
+```
+
+2. Register the plugin in your `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "extensions": {
+    "clawspec": {
+      "repoRoot": "/path/to/your/workspace",
+      "timeoutMs": 60000
+    }
+  }
+}
+```
+
+3. Restart the gateway:
+
+```bash
+openclaw gateway restart
+```
+
+### Plugin Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `repoRoot` | string | `$OPENCLAW_WORKSPACE` or `cwd` | Workspace root containing the clawspec package |
+| `pythonBin` | string | `python3` | Path to Python binary |
+| `timeoutMs` | integer | `60000` | CLI execution timeout in milliseconds |
+
+### Supported Actions
+
+`validate`, `run`, `init`, `coverage`, `baseline-capture`, `baseline-show`, `baseline-reset`
+
+See the [openclaw.plugin.json](extensions/clawspec/openclaw.plugin.json) for the full config schema.
+
+## ClawSuite
+
+This package is part of **ClawSuite** — the OpenClaw agent infrastructure toolkit.
 
 | Package | Description | Repo |
-|---------|-------------|------|
-| **ClawPipe** | Config-driven pipeline orchestration engine | [austinmao/clawpipe](https://github.com/austinmao/clawpipe) |
-| **ClawSpec** | Contract-first QA for skills and agents | [austinmao/clawspec](https://github.com/austinmao/clawspec) |
-| **ClawWrap** | Outbound message routing and policy enforcement | [austinmao/clawwrap](https://github.com/austinmao/clawwrap) |
-| **ClawAgentSkill** | Agent and skill discovery, security scanning | [austinmao/clawagentskill](https://github.com/austinmao/clawagentskill) |
-| **ClawScaffold** | Agent and skill scaffolding and lifecycle management | [austinmao/clawscaffold](https://github.com/austinmao/clawscaffold) |
+|---|---|---|
+| **ClawPipe** | Config-driven pipeline orchestration | [austinmao/clawpipe](https://github.com/austinmao/clawpipe) |
+| **ClawSpec** | Contract-first testing for skills & agents | [austinmao/clawspec](https://github.com/austinmao/clawspec) |
+| **ClawWrap** | Outbound policy & conformance engine | [austinmao/clawwrap](https://github.com/austinmao/clawwrap) |
+| **ClawAgentSkill** | Skill discovery, scanning & adoption | [austinmao/clawagentskill](https://github.com/austinmao/clawagentskill) |
+| **ClawScaffold** | Agent/skill scaffold interviews | [austinmao/clawscaffold](https://github.com/austinmao/clawscaffold) |
+| **ClawInterview** | Pipeline interview compilation & execution | *(coming soon)* |
+
+All packages include OpenClaw gateway plugins for autonomous agent access.
 
 ## License
 
